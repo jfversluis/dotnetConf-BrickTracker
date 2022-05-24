@@ -1,9 +1,7 @@
-﻿using BrickTrackerClient.Data;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Maui.Controls.Hosting;
-using Microsoft.Maui.Hosting;
+﻿using BrickTrackerMauiClient.Data;
+using Microsoft.AspNetCore.Components.WebView.Maui;
 
-namespace BrickTrackerClient
+namespace BrickTrackerMauiClient
 {
     public static class MauiProgram
     {
@@ -11,14 +9,17 @@ namespace BrickTrackerClient
         {
             var builder = MauiApp.CreateBuilder();
             builder
-                .RegisterBlazorMauiWebView()
                 .UseMauiApp<App>()
                 .ConfigureFonts(fonts =>
                 {
                     fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
                 });
 
-            builder.Services.AddBlazorWebView();
+            builder.Services.AddMauiBlazorWebView();
+#if DEBUG
+		builder.Services.AddBlazorWebViewDeveloperTools();
+#endif
+
             builder.Services.AddSingleton<WeatherForecastService>();
             builder.Services.AddSingleton<AppState>();
 

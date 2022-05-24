@@ -1,0 +1,115 @@
+﻿@page "/"
+@using System.IO
+@using Microsoft.Maui.Storage
+@inject AppState AppState
+
+@if (showFilePicker)
+{
+    <button @onclick=OnPickFile>Open a file</button>
+}
+
+@if (AppState.SetCollections.Count == 0)
+{
+    <div>No collections!</div>
+}
+else
+{
+    foreach (var setCollection in AppState.SetCollections)
+    {
+        <div>
+            <h1>@setCollection.SetCollection.Name</h1>
+            <CollectionSummary Sets=setCollection.SetCollection />
+        </div>
+    }
+}
+
+@code
+{
+    
+    bool showFilePicker = OperatingSystem.IsAndroid() || OperatingSystem.IsIOS() || OperatingSystem.IsMacCatalyst();// || OperatingSystem.IsWindows();
+    bool useFileWatcher = OperatingSystem.IsMacCatalyst() || OperatingSystem.IsWindows();
+
+    const string CsvSearchPattern = "*.csv";
+    readonly string DataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (useFileWatcher)
+        {
+            // Load existing CSVs
+            await UpdateCsvList();
+
+            // Watch for any new CSVs
+            var fsw = new FileSystemWatcher(DataFolder, CsvSearchPattern);
+            fsw.Changed += OnFileSystemChanged;
+            fsw.Created += OnFileSystemChanged;
+            fsw.Deleted += OnFileSystemChanged;
+            fsw.Renamed += OnFileSystemChanged;
+            fsw.EnableRaisingEvents = true;
+        }
+    }
+
+    async Task UpdateCsvList()
+    {
+        var foundCsvPaths = Directory.GetFiles(DataFolder, CsvSearchPattern);
+
+        var loadedCsvPaths = AppState.SetCollections.Select(c => c.FilePath);
+        var csvPathsToRemove = loadedCsvPaths.Except(foundCsvPaths);
+        var csvPathsToAdd = foundCsvPaths.Except(loadedCsvPaths);
+
+        AppState.SetCollections = AppState.SetCollections.Where(sc => !csvPathsToRemove.Contains(sc.FilePath) || !sc.FromFileSystem).ToList();
+
+        foreach (var csvPathToAdd in csvPathsToAdd)
+        {
+            await AddCsvSetFromFileSystem(csvPathToAdd);
+        }
+    }
+
+    async Task AddCsvSetFromFileSystem(string fullPath)
+    {
+        try
+        {
+            using var fileStream = File.Open(fullPath, FileMode.Open, FileAccess.Read);
+            await AddCsvSet(fileStream, fullPath);
+        }
+        catch
+        {
+        }
+    }
+
+    async Task AddCsvSet(Stream csvStream, string filePath)
+    {
+        var bsc = new BrickSetCollection()
+            {
+                Name = Path.GetFileNameWithoutExtension(filePath),
+            };
+        await bsc.LoadSets(csvStream);
+        AppState.SetCollections.Add(new SetCollectionItem { FilePath = filePath, SetCollection = bsc, FromFileSystem = true });
+    }
+
+    async void OnFileSystemChanged(object sender, EventArgs e)
+    {
+        // Wait 1 second to avoid "file in use" errors
+        await Task.Delay(1000);
+
+        // Whenever any file system change happens, re-scan everything to get the current state
+        await UpdateCsvList();
+
+        // And then update the Blazor UI
+        await InvokeAsync(() => StateHasChanged());
+    }
+
+    async Task OnPickFile()
+    {
+        var pickedFile = await FilePicker.PickAsync(new PickOptions
+            {
+                PickerTitle = "Pick a CSV file",
+            });
+
+        if (pickedFile != null)
+        {
+            using var fileStream = await pickedFile.OpenReadAsync();
+            await AddCsvSet(fileStream, pickedFile.FileName);
+        }
+    }
+}
